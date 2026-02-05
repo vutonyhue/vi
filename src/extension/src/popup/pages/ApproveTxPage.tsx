@@ -1,33 +1,69 @@
 /**
  * ApproveTxPage - DApp Transaction Approval
- * 
+ *
  * Reuses ConfirmTxScreen for consistent UX with SendPage.
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ethers } from 'ethers';
-import { decryptPrivateKey } from '@shared/lib/encryption';
-import { SecureWalletStorage, PreparedTransaction, GasEstimate, GasSettings } from '@shared/types';
-import { STORAGE_KEYS } from '@shared/storage/types';
-import { BSC_MAINNET } from '@shared/constants/tokens';
-import { estimateTx, signAndBroadcast, parseTransactionError } from '@shared/lib/txBuilder';
-import ConfirmTxScreen from '../components/ConfirmTxScreen';
 import { Loader2 } from 'lucide-react';
+import { decryptPrivateKey } from '@shared/lib/encryption';
+import { STORAGE_KEYS } from '@shared/storage/types';
+import { GasEstimate, GasSettings, PreparedTransaction, SecureWalletStorage } from '@shared/types';
+import { estimateTx, parseTransactionError, signAndBroadcast } from '@shared/lib/txBuilder';
+import ConfirmTxScreen from '../components/ConfirmTxScreen';
+
+interface PendingTxRequest {
+  id: string;
+  origin: string;
+  params: unknown[];
+  requestedAccount?: string;
+}
+
+interface DAppTxPayload {
+  from?: string;
+  to?: string;
+  value?: string;
+  data?: string;
+}
+
+function parseWeiValue(rawValue: unknown): bigint {
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return 0n;
+  }
+
+  if (typeof rawValue === 'bigint') {
+    return rawValue;
+  }
+
+  if (typeof rawValue === 'number') {
+    if (!Number.isFinite(rawValue) || rawValue < 0) {
+      throw new Error('Gia tri giao dich khong hop le');
+    }
+    return BigInt(Math.trunc(rawValue));
+  }
+
+  if (typeof rawValue === 'string') {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return 0n;
+    if (/^0x[0-9a-fA-F]+$/.test(trimmed)) {
+      return BigInt(trimmed);
+    }
+    if (/^\d+$/.test(trimmed)) {
+      return BigInt(trimmed);
+    }
+  }
+
+  throw new Error('Gia tri giao dich khong hop le');
+}
 
 function ApproveTxPage() {
   const [searchParams] = useSearchParams();
   const requestId = searchParams.get('requestId') || '';
-  
-  // Parse transaction data from URL
-  const txData = {
-    to: searchParams.get('to') || '',
-    value: searchParams.get('value') || '0',
-    data: searchParams.get('data') || '',
-    origin: searchParams.get('origin') || 'Unknown',
-  };
-  
+
   const [activeAddress, setActiveAddress] = useState('');
+  const [requestOrigin, setRequestOrigin] = useState('Unknown');
   const [preparedTx, setPreparedTx] = useState<PreparedTransaction | null>(null);
   const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,38 +76,56 @@ function ApproveTxPage() {
 
   const initializeTx = async () => {
     try {
-      // Get active address
-      const walletData = await chrome.storage.local.get(STORAGE_KEYS.ACTIVE_WALLET);
-      const address = walletData[STORAGE_KEYS.ACTIVE_WALLET];
-      
-      if (!address) {
-        setError('Không tìm thấy ví');
-        setLoading(false);
+      if (!requestId) {
+        setError('Khong tim thay yeu cau giao dich');
         return;
       }
-      
-      setActiveAddress(address);
 
-      // Build PreparedTransaction from URL params
-      const isContractInteraction = !!txData.data && txData.data !== '0x';
-      
+      const pendingResponse = await chrome.runtime.sendMessage({
+        type: 'GET_PENDING_REQUEST',
+        payload: { requestId },
+      });
+
+      if (!pendingResponse?.success || !pendingResponse?.data) {
+        setError('Yeu cau giao dich da het han');
+        return;
+      }
+
+      const pendingRequest = pendingResponse.data as PendingTxRequest;
+      const txPayload = (pendingRequest.params?.[0] || {}) as DAppTxPayload;
+      const to = typeof txPayload.to === 'string' ? txPayload.to : '';
+      if (!to) {
+        setError('Thieu dia chi nhan giao dich');
+        return;
+      }
+
+      const fromAccount = pendingRequest.requestedAccount || txPayload.from || '';
+      if (!fromAccount) {
+        setError('Khong xac dinh duoc vi ky');
+        return;
+      }
+
+      const txData = typeof txPayload.data === 'string' ? txPayload.data : '0x';
+      const weiValue = parseWeiValue(txPayload.value);
+      const isContractInteraction = txData !== '0x';
+
       const prepared: PreparedTransaction = {
-        to: txData.to,
-        value: txData.value !== '0' ? ethers.parseEther(txData.value) : 0n,
-        data: txData.data || '0x',
+        to,
+        value: weiValue,
+        data: txData,
         tokenSymbol: 'BNB',
         tokenDecimals: 18,
         tokenAddress: null,
         isContractInteraction,
-        formattedAmount: txData.value,
+        formattedAmount: ethers.formatEther(weiValue),
       };
-      
-      setPreparedTx(prepared);
 
-      // Estimate gas
-      const estimate = await estimateTx(prepared, address);
+      setPreparedTx(prepared);
+      setActiveAddress(fromAccount);
+      setRequestOrigin(pendingRequest.origin || 'Unknown');
+
+      const estimate = await estimateTx(prepared, fromAccount);
       setGasEstimate(estimate);
-      
     } catch (err) {
       console.error('[ApproveTxPage] Init error:', err);
       setError(parseTransactionError(err));
@@ -82,40 +136,33 @@ function ApproveTxPage() {
 
   const handleConfirm = async (password: string, gasSettings: GasSettings) => {
     if (!preparedTx) return;
-    
+
     setSending(true);
     setError('');
-    
+
     try {
-      // Get encrypted wallet data
       const encryptedData = await chrome.storage.local.get(STORAGE_KEYS.ENCRYPTED_KEYS);
       const data = encryptedData[STORAGE_KEYS.ENCRYPTED_KEYS];
-      
+
       if (!data) {
-        throw new Error('Không tìm thấy ví');
+        throw new Error('Khong tim thay vi');
       }
-      
+
       const parsed: SecureWalletStorage = JSON.parse(data);
-      const keyData = parsed.wallets[activeAddress];
-      
+      const keyData = parsed.wallets[activeAddress] || parsed.wallets[activeAddress.toLowerCase()];
+
       if (!keyData) {
-        throw new Error('Không tìm thấy private key');
+        throw new Error('Khong tim thay private key');
       }
-      
-      // Decrypt private key
+
       const privateKey = await decryptPrivateKey(keyData, password);
-      
-      // Sign and broadcast
       const result = await signAndBroadcast(preparedTx, gasSettings, privateKey);
-      
+
       if (result.success) {
-        // Notify background of success
         await chrome.runtime.sendMessage({
           type: 'APPROVE_TRANSACTION',
-          payload: { requestId, txHash: result.data.hash }
+          payload: { requestId, txHash: result.data.hash },
         });
-        
-        // Close popup
         window.close();
       } else {
         setError(result.error);
@@ -131,45 +178,42 @@ function ApproveTxPage() {
   const handleReject = async () => {
     await chrome.runtime.sendMessage({
       type: 'REJECT_TRANSACTION',
-      payload: { requestId }
+      payload: { requestId },
     });
     window.close();
   };
 
   const getHostname = () => {
     try {
-      return new URL(txData.origin).hostname;
+      return new URL(requestOrigin).hostname;
     } catch {
-      return txData.origin;
+      return requestOrigin;
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="mt-2 text-muted-foreground">Đang tải thông tin giao dịch...</p>
+        <p className="mt-2 text-muted-foreground">Dang tai thong tin giao dich...</p>
       </div>
     );
   }
 
-  // Error state (before confirm screen)
   if (!preparedTx || !gasEstimate) {
     return (
       <div className="flex flex-col h-full items-center justify-center p-4 text-center">
-        <p className="text-destructive mb-4">{error || 'Không thể tải thông tin giao dịch'}</p>
+        <p className="text-destructive mb-4">{error || 'Khong the tai thong tin giao dich'}</p>
         <button
           onClick={handleReject}
           className="px-6 py-2 bg-muted rounded-xl"
         >
-          Đóng
+          Dong
         </button>
       </div>
     );
   }
 
-  // Use shared ConfirmTxScreen
   return (
     <ConfirmTxScreen
       prepared={preparedTx}

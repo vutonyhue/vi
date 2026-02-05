@@ -18,7 +18,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/inject.ts-loader-CDOtkZcb.js"
+        "assets/inject.ts-loader-YE95cRnY.js"
       ],
       "matches": [
         "<all_urls>"
@@ -67,7 +67,7 @@
         "<all_urls>"
       ],
       "resources": [
-        "assets/inject.ts-DVvYImSK.js"
+        "assets/inject.ts-r1EY1JTc.js"
       ],
       "use_dynamic_url": true
     }
