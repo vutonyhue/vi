@@ -1,0 +1,49 @@
+{
+  "../../../../../@crx/manifest": {
+    "file": "assets/crx-manifest.js-Cj7SDCRP.js",
+    "name": "crx-manifest.js",
+    "src": "../../../../../@crx/manifest",
+    "isEntry": true
+  },
+  "_encryption-Bv4JcW_9.js": {
+    "file": "assets/encryption-Bv4JcW_9.js",
+    "name": "encryption"
+  },
+  "inject.ts-loader.js": {
+    "file": "assets/inject.ts-loader-CDOtkZcb.js",
+    "src": "inject.ts-loader.js"
+  },
+  "popup.html": {
+    "file": "assets/popup.html-BOBAAGGt.js",
+    "name": "popup.html",
+    "src": "popup.html",
+    "isEntry": true,
+    "imports": [
+      "_encryption-Bv4JcW_9.js"
+    ],
+    "css": [
+      "assets/popup-BMp1zMFb.css"
+    ]
+  },
+  "src/background/service-worker.ts": {
+    "file": "assets/service-worker.ts-DopfMjpw.js",
+    "name": "service-worker.ts",
+    "src": "src/background/service-worker.ts",
+    "isEntry": true,
+    "imports": [
+      "_encryption-Bv4JcW_9.js"
+    ]
+  },
+  "src/content/inject.ts": {
+    "file": "assets/inject.ts-DVvYImSK.js",
+    "name": "inject.ts",
+    "src": "src/content/inject.ts",
+    "isEntry": true
+  },
+  "src/content/inpage.ts": {
+    "file": "inpage.js",
+    "name": "inpage",
+    "src": "src/content/inpage.ts",
+    "isEntry": true
+  }
+}
