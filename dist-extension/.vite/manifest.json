@@ -14,7 +14,7 @@
     "src": "inject.ts-loader.js"
   },
   "popup.html": {
-    "file": "assets/popup.html-BOBAAGGt.js",
+    "file": "assets/popup.html-BGINGjht.js",
     "name": "popup.html",
     "src": "popup.html",
     "isEntry": true,
@@ -22,7 +22,7 @@
       "_encryption-Bv4JcW_9.js"
     ],
     "css": [
-      "assets/popup-BMp1zMFb.css"
+      "assets/popup-AXUrzR1M.css"
     ]
   },
   "src/background/service-worker.ts": {

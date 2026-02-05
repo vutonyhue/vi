@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -38,12 +38,12 @@ function SetupPasswordPage({
 
     // Validate password
     if (password.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+      setError('Máº­t kháº©u pháº£i cĂ³ Ă­t nháº¥t 6 kĂ½ tá»±');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp');
+      setError('Máº­t kháº©u xĂ¡c nháº­n khĂ´ng khá»›p');
       return;
     }
 
@@ -53,45 +53,82 @@ function SetupPasswordPage({
       // 1. Encrypt private key with password
       const encryptedData = await encryptPrivateKey(privateKey, password);
 
-      // 2. Create wallet storage structure
-      const walletStorage: SecureWalletStorage = {
+      // 2. Load existing secure storage (if any) and merge instead of overwrite
+      const existingEncrypted = await chrome.storage.local.get(STORAGE_KEYS.ENCRYPTED_KEYS);
+      let existingStorage: SecureWalletStorage = {
         version: 1,
-        wallets: { [walletAddress]: encryptedData },
-        lastAccess: Date.now()
+        wallets: {},
+        lastAccess: Date.now(),
       };
 
-      // 2b. If mnemonic exists (new wallet), encrypt and store it too
-      if (mnemonic) {
-        const encryptedMnemonic = await encryptPrivateKey(mnemonic, password);
-        walletStorage.mnemonics = { [walletAddress]: encryptedMnemonic };
+      if (existingEncrypted[STORAGE_KEYS.ENCRYPTED_KEYS]) {
+        try {
+          const parsed = JSON.parse(existingEncrypted[STORAGE_KEYS.ENCRYPTED_KEYS]);
+          if (parsed && typeof parsed === 'object') {
+            existingStorage = {
+              version: parsed.version || 1,
+              wallets: parsed.wallets || {},
+              mnemonics: parsed.mnemonics || undefined,
+              lastAccess: parsed.lastAccess || Date.now(),
+            };
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse existing encrypted storage, creating new:', parseError);
+        }
       }
 
-      // 3. Create wallet account
+      // 3. Merge wallet keys with dual key format (checksum + lowercase)
+      const mergedWallets = {
+        ...(existingStorage.wallets || {}),
+        [walletAddress]: encryptedData,
+        [walletAddress.toLowerCase()]: encryptedData,
+      };
+
+      // 4. Merge existing mnemonics and optionally add current mnemonic
+      const mergedMnemonics = { ...(existingStorage.mnemonics || {}) };
+      if (mnemonic) {
+        const encryptedMnemonic = await encryptPrivateKey(mnemonic, password);
+        mergedMnemonics[walletAddress] = encryptedMnemonic;
+        mergedMnemonics[walletAddress.toLowerCase()] = encryptedMnemonic;
+      }
+
+      // 5. Build merged wallet storage
+      const walletStorage: SecureWalletStorage = {
+        version: existingStorage.version || 1,
+        wallets: mergedWallets,
+        lastAccess: Date.now(),
+      };
+
+      if (Object.keys(mergedMnemonics).length > 0) {
+        walletStorage.mnemonics = mergedMnemonics;
+      }
+
+      // 6. Create wallet account
       const walletAccount: WalletAccount = {
         address: walletAddress,
         name: 'Ví của tôi',
         isPrimary: true,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
-      // 4. Save to chrome.storage.local
+      // 7. Save to chrome.storage.local
       await chrome.storage.local.set({
         [STORAGE_KEYS.ENCRYPTED_KEYS]: JSON.stringify(walletStorage),
         [STORAGE_KEYS.WALLETS]: JSON.stringify([walletAccount]),
-        [STORAGE_KEYS.ACTIVE_WALLET]: walletAddress
+        [STORAGE_KEYS.ACTIVE_WALLET]: walletAddress,
       });
 
-      // 5. Send message to background to unlock with the new password
+      // 8. Send message to background to unlock with the new password
       await chrome.runtime.sendMessage({
         type: 'UNLOCK_WALLET',
-        payload: { password }
+        payload: { password },
       });
 
-      // 6. Complete setup
+      // 9. Complete setup
       onComplete();
     } catch (err) {
       console.error('Setup error:', err);
-      setError('Đã xảy ra lỗi khi thiết lập mật khẩu. Vui lòng thử lại.');
+      setError('ÄĂ£ xáº£y ra lá»—i khi thiáº¿t láº­p máº­t kháº©u. Vui lĂ²ng thá»­ láº¡i.');
     } finally {
       setLoading(false);
     }
@@ -113,17 +150,17 @@ function SetupPasswordPage({
         <button 
           onClick={onBack}
           className="p-2 hover:bg-accent rounded-lg transition-colors"
-          aria-label="Quay lại"
+          aria-label="Quay láº¡i"
           disabled={loading}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-bold">Thiết lập mật khẩu</h1>
+        <h1 className="text-lg font-bold">Thiáº¿t láº­p máº­t kháº©u</h1>
       </div>
 
       {/* Wallet Address Preview */}
       <div className="bg-muted rounded-lg p-3 mb-6">
-        <p className="text-xs text-muted-foreground mb-1">Địa chỉ ví</p>
+        <p className="text-xs text-muted-foreground mb-1">Äá»‹a chá»‰ vĂ­</p>
         <p className="text-sm font-mono break-all">
           {walletAddress.slice(0, 10)}...{walletAddress.slice(-8)}
         </p>
@@ -133,7 +170,7 @@ function SetupPasswordPage({
       <div className="flex-1 space-y-4">
         {/* Password Input */}
         <div>
-          <label className="block text-sm font-medium mb-2">Mật khẩu</label>
+          <label className="block text-sm font-medium mb-2">Máº­t kháº©u</label>
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
@@ -142,7 +179,7 @@ function SetupPasswordPage({
                 setPassword(e.target.value);
                 setError('');
               }}
-              placeholder="Nhập mật khẩu (ít nhất 6 ký tự)"
+              placeholder="Nháº­p máº­t kháº©u (Ă­t nháº¥t 6 kĂ½ tá»±)"
               className="w-full pr-12"
               disabled={loading}
             />
@@ -150,7 +187,7 @@ function SetupPasswordPage({
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={showPassword ? 'Ẩn' : 'Hiện'}
+              aria-label={showPassword ? 'áº¨n' : 'Hiá»‡n'}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -184,7 +221,7 @@ function SetupPasswordPage({
 
         {/* Confirm Password Input */}
         <div>
-          <label className="block text-sm font-medium mb-2">Xác nhận mật khẩu</label>
+          <label className="block text-sm font-medium mb-2">XĂ¡c nháº­n máº­t kháº©u</label>
           <div className="relative">
             <Input
               type={showConfirm ? 'text' : 'password'}
@@ -193,7 +230,7 @@ function SetupPasswordPage({
                 setConfirmPassword(e.target.value);
                 setError('');
               }}
-              placeholder="Nhập lại mật khẩu"
+              placeholder="Nháº­p láº¡i máº­t kháº©u"
               className="w-full pr-12"
               disabled={loading}
             />
@@ -201,7 +238,7 @@ function SetupPasswordPage({
               type="button"
               onClick={() => setShowConfirm(!showConfirm)}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={showConfirm ? 'Ẩn' : 'Hiện'}
+              aria-label={showConfirm ? 'áº¨n' : 'Hiá»‡n'}
             >
               {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -212,7 +249,7 @@ function SetupPasswordPage({
             <p className={`text-xs mt-1 ${
               password === confirmPassword ? 'text-success' : 'text-destructive'
             }`}>
-              {password === confirmPassword ? '✓ Mật khẩu khớp' : '✗ Mật khẩu không khớp'}
+              {password === confirmPassword ? 'âœ“ Máº­t kháº©u khá»›p' : 'âœ— Máº­t kháº©u khĂ´ng khá»›p'}
             </p>
           )}
         </div>
@@ -229,9 +266,9 @@ function SetupPasswordPage({
       <div className="bg-primary/10 rounded-lg p-3 mb-4 flex items-start gap-3">
         <ShieldCheck className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-medium text-primary">Bảo mật AES-256-GCM</p>
+          <p className="text-sm font-medium text-primary">Báº£o máº­t AES-256-GCM</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Private key sẽ được mã hóa với chuẩn bảo mật cao nhất và chỉ lưu trên thiết bị của bạn.
+            Private key sáº½ Ä‘Æ°á»£c mĂ£ hĂ³a vá»›i chuáº©n báº£o máº­t cao nháº¥t vĂ  chá»‰ lÆ°u trĂªn thiáº¿t bá»‹ cá»§a báº¡n.
           </p>
         </div>
       </div>
@@ -245,10 +282,10 @@ function SetupPasswordPage({
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Đang mã hóa...
+            Äang mĂ£ hĂ³a...
           </>
         ) : (
-          'Hoàn tất thiết lập'
+          'HoĂ n táº¥t thiáº¿t láº­p'
         )}
       </Button>
     </div>
@@ -256,3 +293,4 @@ function SetupPasswordPage({
 }
 
 export default SetupPasswordPage;
+
