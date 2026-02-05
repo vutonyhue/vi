@@ -19,6 +19,12 @@ export interface Transaction {
   type: "native" | "token";
 }
 
+const proxyApiKey = import.meta.env.VITE_BSCSCAN_PROXY_API_KEY as string | undefined;
+
+const proxyHeaders = proxyApiKey
+  ? { 'x-funwallet-api-key': proxyApiKey }
+  : undefined;
+
 // Fetch normal transactions via Edge Function Proxy
 export const getNormalTransactions = async (
   address: string,
@@ -29,7 +35,8 @@ export const getNormalTransactions = async (
     console.log("[BSCScan] Fetching normal txs for:", address);
     
     const { data, error } = await supabase.functions.invoke('bscscan-proxy', {
-      body: { address, action: 'txlist', page, offset }
+      body: { address, action: 'txlist', page, offset },
+      headers: proxyHeaders,
     });
     
     if (error) {
@@ -63,7 +70,8 @@ export const getTokenTransactions = async (
     console.log("[BSCScan] Fetching token txs for:", address);
     
     const { data, error } = await supabase.functions.invoke('bscscan-proxy', {
-      body: { address, action: 'tokentx', page, offset }
+      body: { address, action: 'tokentx', page, offset },
+      headers: proxyHeaders,
     });
     
     if (error) {

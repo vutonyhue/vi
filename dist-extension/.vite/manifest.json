@@ -5,37 +5,37 @@
     "src": "../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_encryption-Bv4JcW_9.js": {
-    "file": "assets/encryption-Bv4JcW_9.js",
+  "_encryption-ChsFRMua.js": {
+    "file": "assets/encryption-ChsFRMua.js",
     "name": "encryption"
   },
   "inject.ts-loader.js": {
-    "file": "assets/inject.ts-loader-CDOtkZcb.js",
+    "file": "assets/inject.ts-loader-YE95cRnY.js",
     "src": "inject.ts-loader.js"
   },
   "popup.html": {
-    "file": "assets/popup.html-D45OIP1A.js",
+    "file": "assets/popup.html-x7a8TYDD.js",
     "name": "popup.html",
     "src": "popup.html",
     "isEntry": true,
     "imports": [
-      "_encryption-Bv4JcW_9.js"
+      "_encryption-ChsFRMua.js"
     ],
     "css": [
       "assets/popup-Dbyx_xTS.css"
     ]
   },
   "src/background/service-worker.ts": {
-    "file": "assets/service-worker.ts-wNLDwJWd.js",
+    "file": "assets/service-worker.ts-D81Dqeq4.js",
     "name": "service-worker.ts",
     "src": "src/background/service-worker.ts",
     "isEntry": true,
     "imports": [
-      "_encryption-Bv4JcW_9.js"
+      "_encryption-ChsFRMua.js"
     ]
   },
   "src/content/inject.ts": {
-    "file": "assets/inject.ts-DVvYImSK.js",
+    "file": "assets/inject.ts-r1EY1JTc.js",
     "name": "inject.ts",
     "src": "src/content/inject.ts",
     "isEntry": true
