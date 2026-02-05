@@ -47,12 +47,15 @@ type MessageType =
   | 'eth_sendTransaction'
   | 'personal_sign'
   | 'eth_signTypedData_v4'
-  | 'wallet_switchEthereumChain';
+  | 'wallet_switchEthereumChain'
+  | 'wallet_requestPermissions'
+  | 'wallet_getPermissions';
 
 interface Message {
   type: MessageType;
   payload?: unknown;
   origin?: string;
+  requestId?: string;
 }
 
 interface MessageResponse {
@@ -66,6 +69,10 @@ interface PendingRequestWithCallback extends PendingRequest {
   tabId?: number;
   resolve?: (result: unknown) => void;
   reject?: (error: Error) => void;
+}
+
+interface WalletPermissionDescriptor {
+  parentCapability: string;
 }
 
 // State
@@ -128,6 +135,7 @@ async function handleMessage(
 ): Promise<MessageResponse | null> {
   const origin = message.origin || sender.tab?.url;
   const tabId = sender.tab?.id;
+  const requestId = message.requestId;
   
   switch (message.type) {
     // Wallet state
@@ -147,7 +155,7 @@ async function handleMessage(
       return handleGetAccounts(origin);
       
     case 'eth_requestAccounts':
-      return handleRequestAccounts(origin, tabId, sendResponse);
+      return handleRequestAccounts(origin, tabId, sendResponse, requestId);
       
     // Chain
     case 'GET_CURRENT_CHAIN':
@@ -157,19 +165,25 @@ async function handleMessage(
     case 'SWITCH_CHAIN':
     case 'wallet_switchEthereumChain':
       return handleSwitchChain(message.payload as { chainId: string });
+
+    case 'wallet_requestPermissions':
+      return handleWalletRequestPermissions(message.payload as Array<{ eth_accounts?: Record<string, never> }>, origin, tabId, sendResponse, requestId);
+
+    case 'wallet_getPermissions':
+      return handleWalletGetPermissions(origin);
       
     // Transactions
     case 'eth_sendTransaction':
     case 'SIGN_TRANSACTION':
-      return handleSendTransaction(message.payload as TransactionRequest, origin, tabId, sendResponse);
+      return handleSendTransaction(message.payload as TransactionRequest, origin, tabId, sendResponse, requestId);
       
     // Signing
     case 'personal_sign':
     case 'PERSONAL_SIGN':
-      return handlePersonalSign(message.payload as { message: string; address?: string }, origin, tabId, sendResponse);
+      return handlePersonalSign(message.payload as { message: string; address?: string }, origin, tabId, sendResponse, requestId);
       
     case 'eth_signTypedData_v4':
-      return handleSignTypedData(message.payload as { address: string; data: string }, origin, tabId, sendResponse);
+      return handleSignTypedData(message.payload as { address: string; data: string }, origin, tabId, sendResponse, requestId);
       
     // Pending request management
     case 'GET_PENDING_REQUEST':
@@ -270,9 +284,11 @@ async function handleGetAccounts(origin?: string): Promise<MessageResponse> {
   if (origin) {
     try {
       const url = new URL(origin);
-      if (!connectedDApps.has(url.origin)) {
+      const connection = connectedDApps.get(url.origin);
+      if (!connection) {
         return { success: true, data: [] };
       }
+      return { success: true, data: connection.accounts || [] };
     } catch {
       // Invalid origin
     }
@@ -287,14 +303,34 @@ async function handleGetAccounts(origin?: string): Promise<MessageResponse> {
   };
 }
 
+function getDefaultPermissionsForConnection(): DAppConnection['permissions'] {
+  return [
+    'eth_accounts',
+    'eth_sendTransaction',
+    'personal_sign',
+    'eth_signTypedData',
+    'wallet_switchEthereumChain',
+  ];
+}
+
+function toWalletPermissions(permissions: DAppConnection['permissions']): WalletPermissionDescriptor[] {
+  const result: WalletPermissionDescriptor[] = [];
+  if (permissions.includes('eth_accounts')) {
+    result.push({ parentCapability: 'eth_accounts' });
+  }
+  return result;
+}
+
 /**
  * Handle eth_requestAccounts - prompt user to connect
  */
 async function handleRequestAccounts(
   origin?: string, 
   tabId?: number,
-  sendResponse?: (response: MessageResponse) => void
-): Promise<MessageResponse | null> {
+  sendResponse?: (response: MessageResponse) => void,
+  dappRequestId?: string,
+  requestMethod: 'eth_requestAccounts' | 'wallet_requestPermissions' = 'eth_requestAccounts'
+): Promise<MessageResponse> {
   if (!origin) {
     return { success: false, error: 'Origin required' };
   }
@@ -307,22 +343,16 @@ async function handleRequestAccounts(
     parsedOrigin = origin;
   }
   
-  if (isLocked) {
-    // Open popup to unlock
-    await openPopup('unlock', { origin: parsedOrigin });
-    return { success: false, error: 'Wallet is locked' };
-  }
-  
   // Check if already connected
   if (connectedDApps.has(parsedOrigin)) {
     return handleGetAccounts(parsedOrigin);
   }
   
   // Create pending request with callback
-  const requestId = `connect_${Date.now()}`;
+  const requestId = dappRequestId || `connect_${Date.now()}`;
   const request: PendingRequestWithCallback = {
     id: requestId,
-    method: 'eth_requestAccounts',
+    method: requestMethod,
     params: [],
     origin: parsedOrigin,
     timestamp: Date.now(),
@@ -331,11 +361,16 @@ async function handleRequestAccounts(
   
   pendingRequests.set(requestId, request);
   
-  // Open popup for user approval
-  await openPopup('connect', { requestId, origin: parsedOrigin });
-  
-  // Return null - response will be sent via callback after user approval
-  return null;
+  if (isLocked) {
+    // Open unlock and then redirect to connection approval page
+    await openPopupWithUnlockRedirect('connect', { requestId, origin: parsedOrigin });
+  } else {
+    // Open popup for user approval
+    await openPopup('connect', { requestId, origin: parsedOrigin });
+  }
+
+  // Keep dApp request pending until user approves/rejects in popup
+  return { success: false, error: 'Pending user approval' };
 }
 
 /**
@@ -352,37 +387,45 @@ function handleGetPendingRequest(payload: { requestId: string }): MessageRespons
 /**
  * Handle connection approval from popup
  */
-async function handleApproveConnection(payload: { requestId: string; origin: string }): Promise<MessageResponse> {
+async function handleApproveConnection(payload: { requestId: string; origin: string; accounts?: string[]; permissions?: DAppConnection['permissions'] }): Promise<MessageResponse> {
   const request = pendingRequests.get(payload.requestId);
   if (!request) {
     return { success: false, error: 'Request not found or expired' };
   }
   
   // Create connection
+  const activeWallet = await chromeStorageAdapter.get(STORAGE_KEYS.ACTIVE_WALLET);
+  const selectedAccounts = Array.isArray(payload.accounts) ? payload.accounts.filter(Boolean) : [];
+  const accounts = selectedAccounts.length > 0
+    ? selectedAccounts
+    : (activeWallet ? [activeWallet] : []);
+  const permissions = payload.permissions && payload.permissions.length > 0
+    ? payload.permissions
+    : getDefaultPermissionsForConnection();
+
   const connection: DAppConnection = {
     origin: payload.origin,
     name: new URL(payload.origin).hostname,
     connectedAt: Date.now(),
-    permissions: ['eth_accounts'],
+    permissions,
     chainId: currentChainId,
-    accounts: [],
+    accounts,
   };
-  
-  // Get active wallet
-  const activeWallet = await chromeStorageAdapter.get(STORAGE_KEYS.ACTIVE_WALLET);
-  if (activeWallet) {
-    connection.accounts = [activeWallet];
-  }
   
   connectedDApps.set(payload.origin, connection);
   await saveDAppConnections();
   
+  const walletPermissionResult = toWalletPermissions(connection.permissions);
+  const approvalResult = request.method === 'wallet_requestPermissions'
+    ? walletPermissionResult
+    : connection.accounts;
+
   // Send response to content script
   if (request.tabId) {
     chrome.tabs.sendMessage(request.tabId, {
       type: 'FUN_WALLET_RESPONSE',
       requestId: payload.requestId,
-      result: connection.accounts,
+      result: approvalResult,
     }).catch(console.error);
   }
   
@@ -393,7 +436,38 @@ async function handleApproveConnection(payload: { requestId: string; origin: str
   notifyTabs('connect', { chainId: `0x${currentChainId.toString(16)}` });
   notifyTabs('accountsChanged', connection.accounts);
   
-  return { success: true, data: connection.accounts };
+  return { success: true, data: approvalResult };
+}
+
+async function handleWalletRequestPermissions(
+  _payload: Array<{ eth_accounts?: Record<string, never> }> | undefined,
+  origin?: string,
+  tabId?: number,
+  sendResponse?: (response: MessageResponse) => void,
+  dappRequestId?: string
+): Promise<MessageResponse> {
+  const connectResponse = await handleRequestAccounts(origin, tabId, sendResponse, dappRequestId, 'wallet_requestPermissions');
+  if (connectResponse.success) {
+    return { success: true, data: [{ parentCapability: 'eth_accounts' }] };
+  }
+  return connectResponse;
+}
+
+function handleWalletGetPermissions(origin?: string): MessageResponse {
+  if (!origin) {
+    return { success: true, data: [] };
+  }
+
+  try {
+    const parsedOrigin = new URL(origin).origin;
+    const connection = connectedDApps.get(parsedOrigin);
+    if (!connection) {
+      return { success: true, data: [] };
+    }
+    return { success: true, data: toWalletPermissions(connection.permissions) };
+  } catch {
+    return { success: true, data: [] };
+  }
 }
 
 /**
@@ -450,8 +524,9 @@ async function handleSendTransaction(
   tx: TransactionRequest, 
   origin?: string, 
   tabId?: number,
-  sendResponse?: (response: MessageResponse) => void
-): Promise<MessageResponse | null> {
+  sendResponse?: (response: MessageResponse) => void,
+  dappRequestId?: string
+): Promise<MessageResponse> {
   // Parse origin if needed
   let parsedOrigin: string | undefined;
   if (origin) {
@@ -479,7 +554,7 @@ async function handleSendTransaction(
   }
   
   // Create pending request
-  const requestId = `tx_${Date.now()}`;
+  const requestId = dappRequestId || `tx_${Date.now()}`;
   pendingRequests.set(requestId, {
     id: requestId,
     method: 'eth_sendTransaction',
@@ -494,13 +569,13 @@ async function handleSendTransaction(
   // If wallet is locked, open unlock popup with redirect to approve-tx
   if (isLocked) {
     await openPopupWithUnlockRedirect('approve-tx', txParams);
-    return null;
+    return { success: false, error: 'Pending user approval' };
   }
   
   // Wallet is unlocked, open approve-tx directly
   await openPopup('approve-tx', txParams);
   
-  return null;
+  return { success: false, error: 'Pending user approval' };
 }
 
 /**
@@ -554,8 +629,9 @@ async function handlePersonalSign(
   payload: { message: string; address?: string },
   origin?: string,
   tabId?: number,
-  sendResponse?: (response: MessageResponse) => void
-): Promise<MessageResponse | null> {
+  sendResponse?: (response: MessageResponse) => void,
+  dappRequestId?: string
+): Promise<MessageResponse> {
   let parsedOrigin: string | undefined;
   if (origin) {
     try {
@@ -571,7 +647,7 @@ async function handlePersonalSign(
   }
   
   // Create pending request
-  const requestId = `sign_${Date.now()}`;
+  const requestId = dappRequestId || `sign_${Date.now()}`;
   pendingRequests.set(requestId, {
     id: requestId,
     method: 'personal_sign',
@@ -591,13 +667,13 @@ async function handlePersonalSign(
   // If wallet is locked, open unlock popup with redirect
   if (isLocked) {
     await openPopupWithUnlockRedirect('approve-sign', signParams);
-    return null;
+    return { success: false, error: 'Pending user approval' };
   }
   
   // Open popup for user approval
   await openPopup('approve-sign', signParams);
   
-  return null;
+  return { success: false, error: 'Pending user approval' };
 }
 
 /**
@@ -608,8 +684,9 @@ async function handleSignTypedData(
   payload: { address: string; data: string },
   origin?: string,
   tabId?: number,
-  sendResponse?: (response: MessageResponse) => void
-): Promise<MessageResponse | null> {
+  sendResponse?: (response: MessageResponse) => void,
+  dappRequestId?: string
+): Promise<MessageResponse> {
   let parsedOrigin: string | undefined;
   if (origin) {
     try {
@@ -625,7 +702,7 @@ async function handleSignTypedData(
   }
   
   // Create pending request
-  const requestId = `signTyped_${Date.now()}`;
+  const requestId = dappRequestId || `signTyped_${Date.now()}`;
   pendingRequests.set(requestId, {
     id: requestId,
     method: 'eth_signTypedData_v4',
@@ -645,13 +722,13 @@ async function handleSignTypedData(
   // If wallet is locked, open unlock popup with redirect
   if (isLocked) {
     await openPopupWithUnlockRedirect('approve-sign', signParams);
-    return null;
+    return { success: false, error: 'Pending user approval' };
   }
   
   // Open popup for user approval
   await openPopup('approve-sign', signParams);
   
-  return null;
+  return { success: false, error: 'Pending user approval' };
 }
 
 /**

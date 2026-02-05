@@ -14,7 +14,7 @@
     "src": "inject.ts-loader.js"
   },
   "popup.html": {
-    "file": "assets/popup.html-BGINGjht.js",
+    "file": "assets/popup.html-D45OIP1A.js",
     "name": "popup.html",
     "src": "popup.html",
     "isEntry": true,
@@ -22,11 +22,11 @@
       "_encryption-Bv4JcW_9.js"
     ],
     "css": [
-      "assets/popup-AXUrzR1M.css"
+      "assets/popup-Dbyx_xTS.css"
     ]
   },
   "src/background/service-worker.ts": {
-    "file": "assets/service-worker.ts-DopfMjpw.js",
+    "file": "assets/service-worker.ts-wNLDwJWd.js",
     "name": "service-worker.ts",
     "src": "src/background/service-worker.ts",
     "isEntry": true,

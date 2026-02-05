@@ -38,12 +38,12 @@ function SetupPasswordPage({
 
     // Validate password
     if (password.length < 6) {
-      setError('Máº­t kháº©u pháº£i cĂ³ Ă­t nháº¥t 6 kĂ½ tá»±');
+      setError('Mật khẩu phải có ít nhất 6 ký tự');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Máº­t kháº©u xĂ¡c nháº­n khĂ´ng khá»›p');
+      setError('Mật khẩu xác nhận không khớp');
       return;
     }
 
@@ -128,7 +128,7 @@ function SetupPasswordPage({
       onComplete();
     } catch (err) {
       console.error('Setup error:', err);
-      setError('ÄĂ£ xáº£y ra lá»—i khi thiáº¿t láº­p máº­t kháº©u. Vui lĂ²ng thá»­ láº¡i.');
+      setError('Đã xảy ra lỗi khi thiết lập mật khẩu. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
@@ -150,17 +150,17 @@ function SetupPasswordPage({
         <button 
           onClick={onBack}
           className="p-2 hover:bg-accent rounded-lg transition-colors"
-          aria-label="Quay láº¡i"
+          aria-label="Quay lại"
           disabled={loading}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-bold">Thiáº¿t láº­p máº­t kháº©u</h1>
+        <h1 className="text-lg font-bold">Thiết lập mật khẩu</h1>
       </div>
 
       {/* Wallet Address Preview */}
       <div className="bg-muted rounded-lg p-3 mb-6">
-        <p className="text-xs text-muted-foreground mb-1">Äá»‹a chá»‰ vĂ­</p>
+        <p className="text-xs text-muted-foreground mb-1">Địa chỉ ví</p>
         <p className="text-sm font-mono break-all">
           {walletAddress.slice(0, 10)}...{walletAddress.slice(-8)}
         </p>
@@ -170,7 +170,7 @@ function SetupPasswordPage({
       <div className="flex-1 space-y-4">
         {/* Password Input */}
         <div>
-          <label className="block text-sm font-medium mb-2">Máº­t kháº©u</label>
+          <label className="block text-sm font-medium mb-2">Mật khẩu</label>
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
@@ -179,7 +179,7 @@ function SetupPasswordPage({
                 setPassword(e.target.value);
                 setError('');
               }}
-              placeholder="Nháº­p máº­t kháº©u (Ă­t nháº¥t 6 kĂ½ tá»±)"
+              placeholder="Nhập mật khẩu (ít nhất 6 ký tự)"
               className="w-full pr-12"
               disabled={loading}
             />
@@ -187,7 +187,7 @@ function SetupPasswordPage({
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={showPassword ? 'áº¨n' : 'Hiá»‡n'}
+              aria-label={showPassword ? 'Ẩn' : 'Hiện'}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -221,7 +221,7 @@ function SetupPasswordPage({
 
         {/* Confirm Password Input */}
         <div>
-          <label className="block text-sm font-medium mb-2">XĂ¡c nháº­n máº­t kháº©u</label>
+          <label className="block text-sm font-medium mb-2">Xác nhận mật khẩu</label>
           <div className="relative">
             <Input
               type={showConfirm ? 'text' : 'password'}
@@ -230,7 +230,7 @@ function SetupPasswordPage({
                 setConfirmPassword(e.target.value);
                 setError('');
               }}
-              placeholder="Nháº­p láº¡i máº­t kháº©u"
+              placeholder="Nhập lại mật khẩu"
               className="w-full pr-12"
               disabled={loading}
             />
@@ -238,7 +238,7 @@ function SetupPasswordPage({
               type="button"
               onClick={() => setShowConfirm(!showConfirm)}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={showConfirm ? 'áº¨n' : 'Hiá»‡n'}
+              aria-label={showConfirm ? 'Ẩn' : 'Hiện'}
             >
               {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -249,7 +249,7 @@ function SetupPasswordPage({
             <p className={`text-xs mt-1 ${
               password === confirmPassword ? 'text-success' : 'text-destructive'
             }`}>
-              {password === confirmPassword ? 'âœ“ Máº­t kháº©u khá»›p' : 'âœ— Máº­t kháº©u khĂ´ng khá»›p'}
+              {password === confirmPassword ? '✓ Mật khẩu khớp' : '✗ Mật khẩu không khớp'}
             </p>
           )}
         </div>
@@ -266,9 +266,9 @@ function SetupPasswordPage({
       <div className="bg-primary/10 rounded-lg p-3 mb-4 flex items-start gap-3">
         <ShieldCheck className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-medium text-primary">Báº£o máº­t AES-256-GCM</p>
+          <p className="text-sm font-medium text-primary">Bảo mật AES-256-GCM</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Private key sáº½ Ä‘Æ°á»£c mĂ£ hĂ³a vá»›i chuáº©n báº£o máº­t cao nháº¥t vĂ  chá»‰ lÆ°u trĂªn thiáº¿t bá»‹ cá»§a báº¡n.
+            Private key sẽ được mã hóa với chuẩn bảo mật cao nhất và chỉ lưu trên thiết bị của bạn.
           </p>
         </div>
       </div>
@@ -282,10 +282,10 @@ function SetupPasswordPage({
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Äang mĂ£ hĂ³a...
+            Đang mã hóa...
           </>
         ) : (
-          'HoĂ n táº¥t thiáº¿t láº­p'
+          'Hoàn tất thiết lập'
         )}
       </Button>
     </div>
