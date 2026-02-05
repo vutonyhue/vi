@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { decryptPrivateKey } from '@shared/lib/encryption';
 import { STORAGE_KEYS } from '@shared/storage/types';
-import { SecureWalletStorage } from '@shared/types';
+import { EncryptedKeyData, SecureWalletStorage } from '@shared/types';
 
 type Step = 'loading' | 'no-mnemonic' | 'verify' | 'show';
 
@@ -24,11 +24,37 @@ function BackupSeedSettingsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeWallet, setActiveWallet] = useState<string | null>(null);
-  const [encryptedMnemonic, setEncryptedMnemonic] = useState<SecureWalletStorage['mnemonics'] | null>(null);
+  const [resolvedEncryptedMnemonic, setResolvedEncryptedMnemonic] = useState<EncryptedKeyData | null>(null);
 
   useEffect(() => {
     checkMnemonicAvailability();
   }, []);
+
+  const findMnemonicByWalletAddress = (
+    mnemonics: SecureWalletStorage['mnemonics'],
+    walletAddress: string
+  ): { encryptedData: EncryptedKeyData; matchedKey: string } | null => {
+    if (!mnemonics || !walletAddress) return null;
+
+    // 1) Exact match first
+    if (mnemonics[walletAddress]) {
+      return { encryptedData: mnemonics[walletAddress], matchedKey: walletAddress };
+    }
+
+    // 2) Lowercase match
+    const lowerAddress = walletAddress.toLowerCase();
+    if (mnemonics[lowerAddress]) {
+      return { encryptedData: mnemonics[lowerAddress], matchedKey: lowerAddress };
+    }
+
+    // 3) Full case-insensitive scan
+    const matchedKey = Object.keys(mnemonics).find(
+      (key) => key.toLowerCase() === lowerAddress
+    );
+
+    if (!matchedKey) return null;
+    return { encryptedData: mnemonics[matchedKey], matchedKey };
+  };
 
   const checkMnemonicAvailability = async () => {
     try {
@@ -54,12 +80,40 @@ function BackupSeedSettingsPage() {
 
       const walletStorage: SecureWalletStorage = JSON.parse(storageData);
       
-      // Check if mnemonic exists for this wallet
-      if (walletStorage.mnemonics && walletStorage.mnemonics[wallet]) {
-        setEncryptedMnemonic(walletStorage.mnemonics);
-        setStep('verify');
-      } else {
+      // Check if mnemonic exists for this wallet (case-insensitive)
+      const matchedMnemonic = findMnemonicByWalletAddress(walletStorage.mnemonics, wallet);
+      if (!matchedMnemonic) {
         setStep('no-mnemonic');
+        return;
+      }
+
+      setResolvedEncryptedMnemonic(matchedMnemonic.encryptedData);
+      setStep('verify');
+
+      // Lightweight migration: ensure exact and lowercase keys exist for future lookups.
+      if (walletStorage.mnemonics) {
+        const updates: Record<string, EncryptedKeyData> = {};
+        const lowerAddress = wallet.toLowerCase();
+        if (!walletStorage.mnemonics[wallet]) {
+          updates[wallet] = matchedMnemonic.encryptedData;
+        }
+        if (!walletStorage.mnemonics[lowerAddress]) {
+          updates[lowerAddress] = matchedMnemonic.encryptedData;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          const migratedStorage: SecureWalletStorage = {
+            ...walletStorage,
+            mnemonics: {
+              ...walletStorage.mnemonics,
+              ...updates,
+            },
+            lastAccess: Date.now(),
+          };
+          await chrome.storage.local.set({
+            [STORAGE_KEYS.ENCRYPTED_KEYS]: JSON.stringify(migratedStorage),
+          });
+        }
       }
     } catch (err) {
       console.error('Error checking mnemonic:', err);
@@ -68,14 +122,13 @@ function BackupSeedSettingsPage() {
   };
 
   const handleVerify = async () => {
-    if (!password || !activeWallet || !encryptedMnemonic) return;
+    if (!password || !activeWallet || !resolvedEncryptedMnemonic) return;
 
     setError('');
     setLoading(true);
 
     try {
-      const encryptedData = encryptedMnemonic[activeWallet];
-      const decryptedMnemonic = await decryptPrivateKey(encryptedData, password);
+      const decryptedMnemonic = await decryptPrivateKey(resolvedEncryptedMnemonic, password);
       
       setMnemonic(decryptedMnemonic);
       setStep('show');
