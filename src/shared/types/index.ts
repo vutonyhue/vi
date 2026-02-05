@@ -66,9 +66,11 @@ export interface SecureWalletStorage {
 // ============== Transaction Types ==============
 
 export interface TransactionRequest {
+  from?: string;
   to: string;
   value?: string;
   data?: string;
+  chainId?: string | number;
   gasLimit?: string;
   gasPrice?: string;
   maxFeePerGas?: string;
@@ -128,6 +130,46 @@ export interface PendingRequest {
   params: unknown[];
   origin: string;
   timestamp: number;
+  requestedAccount?: string;
+  requiredPermission?: DAppPermission;
+}
+
+export interface ProviderRpcRequest {
+  id: string;
+  method: string;
+  params?: unknown[] | Record<string, unknown>;
+}
+
+export interface ProviderRpcPayload {
+  method?: string;
+  paramsRaw?: unknown[] | Record<string, unknown>;
+}
+
+export interface WalletBridgeRequest {
+  channel: string;
+  direction: 'from_inpage';
+  id: string;
+  method: string;
+  params?: unknown[] | Record<string, unknown>;
+}
+
+export interface WalletBridgeResponse {
+  channel: string;
+  direction: 'to_inpage';
+  id: string;
+  result?: unknown;
+  error?: {
+    code?: number;
+    message: string;
+    data?: unknown;
+  } | string;
+}
+
+export interface WalletBridgeEvent {
+  channel: string;
+  direction: 'to_inpage_event';
+  event: 'accountsChanged' | 'chainChanged' | 'connect' | 'disconnect';
+  data?: unknown;
 }
 
 // ============== Staking Types ==============
